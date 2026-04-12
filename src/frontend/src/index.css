@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("/assets/fonts/Fraunces.woff2") format("woff2");
+  font-weight: 300 900;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    /* Dark charcoal header */
+    --background: 0.975 0.006 75;
+    --foreground: 0.18 0.015 60;
+    --card: 1 0 0;
+    --card-foreground: 0.18 0.015 60;
+    --popover: 1 0 0;
+    --popover-foreground: 0.18 0.015 60;
+    /* Amber primary */
+    --primary: 0.68 0.165 55;
+    --primary-foreground: 0.12 0.01 60;
+    --secondary: 0.95 0.012 75;
+    --secondary-foreground: 0.25 0.02 60;
+    --muted: 0.95 0.008 75;
+    --muted-foreground: 0.52 0.025 60;
+    --accent: 0.95 0.012 75;
+    --accent-foreground: 0.25 0.02 60;
+    --destructive: 0.5 0.2 27;
+    --destructive-foreground: 1 0 0;
+    --border: 0.91 0.008 75;
+    --input: 0.91 0.008 75;
+    --ring: 0.68 0.165 55;
+    --success: 0.57 0.15 155;
+    --success-foreground: 1 0 0;
+    --warning: 0.72 0.16 60;
+    --warning-foreground: 0.12 0.01 60;
+    /* Chart */
+    --chart-1: 0.68 0.165 55;
+    --chart-2: 0.57 0.15 155;
+    --chart-3: 0.5 0.2 27;
+    --chart-4: 0.55 0.12 250;
+    --chart-5: 0.72 0.12 300;
+    /* Sidebar = dark charcoal */
+    --sidebar: 0.18 0.018 240;
+    --sidebar-foreground: 0.92 0.01 75;
+    --sidebar-primary: 0.68 0.165 55;
+    --sidebar-primary-foreground: 0.12 0.01 60;
+    --sidebar-accent: 0.24 0.022 240;
+    --sidebar-accent-foreground: 0.92 0.01 75;
+    --sidebar-border: 0.26 0.02 240;
+    --sidebar-ring: 0.68 0.165 55;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  table {
+    page-break-inside: avoid;
+  }
+}
