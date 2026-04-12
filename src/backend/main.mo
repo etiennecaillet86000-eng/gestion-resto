@@ -1,6 +1,9 @@
 import Array "mo:base/Array";
 import Nat "mo:base/Nat";
 import Float "mo:base/Float";
+import Result "mo:base/Result";
+
+
 
 actor {
 
@@ -67,6 +70,8 @@ actor {
     recetteId: Text;
     date: Text;
     quantite: Float;
+    caTtcCapture: Float;
+    coutMatiereTotalCapture: Float;
   };
 
   public type Emprunt = {
@@ -269,10 +274,48 @@ actor {
 
   public query func getVentesRecettes() : async [VenteRecette] { ventesRecettes };
 
-  public func createVente(recetteId: Text, date: Text, quantite: Float) : async VenteRecette {
-    let v: VenteRecette = { id = genId(); recetteId; date; quantite };
-    ventesRecettes := Array.append(ventesRecettes, [v]);
-    v
+  public func createVente(recetteId: Text, date: Text, quantite: Float) : async Result.Result<VenteRecette, Text> {
+    // 1. Trouver la recette manuellement
+    var recetteOpt : ?Recette = null;
+    for (r in recettes.vals()) {
+      if (r.id == recetteId) { recetteOpt := ?r };
+    };
+
+    let recette = switch (recetteOpt) {
+      case null { return #err("Recette introuvable") };
+      case (?r) { r };
+    };
+
+    // 2. Calculs de base
+    let caTtcCapture = recette.prixVenteTTC * quantite;
+    var coutIngredients : Float = 0.0;
+
+    // 3. Calcul du coût matière (Boucle robuste)
+    for (ligneRecette in recette.ingredients.vals()) {
+      var prixUnitaire : Float = 0.0;
+      for (ing in ingredients.vals()) {
+        if (ing.id == ligneRecette.ingredientId) {
+          prixUnitaire := ing.prixUnitaireHT;
+        };
+      };
+      coutIngredients += prixUnitaire * ligneRecette.quantite * quantite;
+    };
+
+    let coutMatiereTotalCapture = coutIngredients + (recette.consommablesHT * quantite);
+
+    // 4. Enregistrement
+    let id = genId();
+    let nouvelleVente : VenteRecette = {
+      id = id;
+      recetteId = recetteId;
+      date = date;
+      quantite = quantite;
+      caTtcCapture = caTtcCapture;
+      coutMatiereTotalCapture = coutMatiereTotalCapture;
+    };
+
+    ventesRecettes := Array.append<VenteRecette>(ventesRecettes, [nouvelleVente]);
+    #ok(nouvelleVente)
   };
 
   public func deleteVente(id: Text) : async Bool {

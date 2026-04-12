@@ -49,7 +49,7 @@ import {
 import { Pencil, Plus, PlusCircle, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { FOOD_COST_CATEGORIES } from "./Rentabilite";
+import { FOOD_COST_CATEGORIES } from "./PilotageGlobal";
 
 // Les catégories recettes correspondent aux catégories food cost
 const CATEGORIES = FOOD_COST_CATEGORIES;

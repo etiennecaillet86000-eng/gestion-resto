@@ -1,0 +1,165 @@
+type VenteRecette = 
+ record {
+   caTtcCapture: float64;
+   coutMatiereTotalCapture: float64;
+   date: text;
+   id: text;
+   quantite: float64;
+   recetteId: text;
+ };
+type Salarie = 
+ record {
+   id: text;
+   nom: text;
+   poste: text;
+   salaireAnnuelBrut: float64;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok: VenteRecette;
+ };
+type RecetteIngredient = 
+ record {
+   ingredientId: text;
+   quantite: float64;
+   unite: text;
+ };
+type Recette = 
+ record {
+   categorie: text;
+   categorieTVA: text;
+   consommablesHT: float64;
+   id: text;
+   ingredients: vec RecetteIngredient;
+   nom: text;
+   prixVenteTTC: float64;
+   tauxTVA: float64;
+ };
+type ParametresRentabilite = 
+ record {
+   nbClientsParSemaine: float64;
+   nbSemainesSaison: float64;
+   tauxFoodCostParCategorie: vec record {
+                                   text;
+                                   float64;
+                                 };
+   ticketMoyenHT: float64;
+ };
+type ParametresJuridiques = 
+ record {
+   formeJuridique: text;
+   regimeFiscal: text;
+   regimeSocial: text;
+ };
+type MouvementStock = 
+ record {
+   date: text;
+   id: text;
+   ingredientId: text;
+   motif: text;
+   quantite: float64;
+   typeOp: text;
+ };
+type LigneFraisFixes = 
+ record {
+   montantMensuelAvecRemu: float64;
+   montantMensuelHorsRemu: float64;
+   nom: text;
+ };
+type LigneAmortissement = 
+ record {
+   coutTotal: float64;
+   dureeMois: nat;
+   id: text;
+   nom: text;
+ };
+type Ingredient = 
+ record {
+   id: text;
+   nom: text;
+   prixUnitaireHT: float64;
+   seuilSecurite: float64;
+   stockInitial: float64;
+   unite: text;
+ };
+type Emprunt = 
+ record {
+   dateDebut: text;
+   differeMois: nat;
+   dureeMois: nat;
+   id: text;
+   montant: float64;
+   nom: text;
+   tauxAnnuel: float64;
+ };
+type AssocieGerant = 
+ record {
+   id: text;
+   nom: text;
+   remunerationAnnuelle: float64;
+   statut: text;
+ };
+service : {
+  createAmortissement: (nom: text, coutTotal: float64, dureeMois: nat) ->
+   (LigneAmortissement);
+  createAssocieGerant: (nom: text, statut: text, remunerationAnnuelle:
+   float64) -> (AssocieGerant);
+  createEmprunt: (nom: text, montant: float64, tauxAnnuel: float64,
+   dureeMois: nat, dateDebut: text, differeMois: nat) -> (Emprunt);
+  createIngredient: (nom: text, unite: text, prixUnitaireHT: float64,
+   seuilSecurite: float64, stockInitial: float64) -> (Ingredient);
+  createMouvement: (ingredientId: text, date: text, typeOp: text, quantite:
+   float64, motif: text) -> (MouvementStock);
+  createRecette: (nom: text, categorie: text, categorieTVA: text, tauxTVA:
+   float64, ings: vec RecetteIngredient, consommablesHT: float64,
+   prixVenteTTC: float64) -> (Recette);
+  createSalarie: (nom: text, poste: text, salaireAnnuelBrut: float64) ->
+   (Salarie);
+  createVente: (recetteId: text, date: text, quantite: float64) -> (Result);
+  deleteAmortissement: (id: text) -> (bool);
+  deleteAssocieGerant: (id: text) -> (bool);
+  deleteEmprunt: (id: text) -> (bool);
+  deleteIngredient: (id: text) -> (bool);
+  deleteMouvement: (id: text) -> (bool);
+  deleteRecette: (id: text) -> (bool);
+  deleteSalarie: (id: text) -> (bool);
+  deleteVente: (id: text) -> (bool);
+  getAmortissements: () -> (vec LigneAmortissement) query;
+  getAssociesGerants: () -> (vec AssocieGerant) query;
+  getEmprunts: () -> (vec Emprunt) query;
+  getFraisFixes: () -> (vec LigneFraisFixes) query;
+  getIngredients: () -> (vec Ingredient) query;
+  getJoursOuvertureParSemaine: () -> (float64) query;
+  getMixProduitParCategorie: () -> (vec record {
+                                          text;
+                                          float64;
+                                        }) query;
+  getMouvementsStock: () -> (vec MouvementStock) query;
+  getParametres: () -> (ParametresRentabilite) query;
+  getParametresJuridiques: () -> (ParametresJuridiques) query;
+  getRecettes: () -> (vec Recette) query;
+  getSalaries: () -> (vec Salarie) query;
+  getVentesRecettes: () -> (vec VenteRecette) query;
+  saveFraisFixes: (lignes: vec LigneFraisFixes) -> (bool);
+  saveJoursOuvertureParSemaine: (v: float64) -> (bool);
+  saveMixProduitParCategorie: (m: vec record {
+                                        text;
+                                        float64;
+                                      }) -> (bool);
+  saveParametres: (p: ParametresRentabilite) -> (bool);
+  saveParametresJuridiques: (p: ParametresJuridiques) -> (bool);
+  updateAmortissement: (id: text, nom: text, coutTotal: float64, dureeMois:
+   nat) -> (bool);
+  updateAssocieGerant: (id: text, nom: text, statut: text,
+   remunerationAnnuelle: float64) -> (bool);
+  updateEmprunt: (id: text, nom: text, montant: float64, tauxAnnuel: 
+   float64, dureeMois: nat, dateDebut: text, differeMois: nat) -> (bool);
+  updateIngredient: (id: text, nom: text, unite: text, prixUnitaireHT:
+   float64, seuilSecurite: float64, stockInitial: float64) -> (bool);
+  updateRecette: (id: text, nom: text, categorie: text, categorieTVA: 
+   text, tauxTVA: float64, ings: vec RecetteIngredient, consommablesHT:
+   float64, prixVenteTTC: float64) -> (bool);
+  updateSalarie: (id: text, nom: text, poste: text, salaireAnnuelBrut:
+   float64) -> (bool);
+}

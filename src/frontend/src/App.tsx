@@ -10,13 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toaster } from "@/components/ui/sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Dashboard from "@/pages/Dashboard";
 import Emprunts from "@/pages/Emprunts";
 import FraisFixes from "@/pages/FraisFixes";
 import Ingredients from "@/pages/Ingredients";
-import Marges from "@/pages/Marges";
 import ParametresJuridiques from "@/pages/ParametresJuridiques";
+import PilotageGlobal from "@/pages/PilotageGlobal";
 import Recettes from "@/pages/Recettes";
-import Rentabilite from "@/pages/Rentabilite";
 import SalairesCotisations from "@/pages/SalairesCotisations";
 import Stock from "@/pages/Stock";
 import VentesDuJour from "@/pages/VentesDuJour";
@@ -25,13 +25,13 @@ import {
   BookOpen,
   ChefHat,
   Landmark,
+  LayoutDashboard,
   LogOut,
   Package,
   Receipt,
   Settings2,
   ShoppingBasket,
   ShoppingCart,
-  TrendingUp,
   Users,
 } from "lucide-react";
 import { useState } from "react";
@@ -130,6 +130,12 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 
 const TABS = [
   {
+    id: "dashboard",
+    label: "Tableau de Bord",
+    icon: LayoutDashboard,
+    component: Dashboard,
+  },
+  {
     id: "parametres",
     label: "Paramètres",
     icon: Settings2,
@@ -156,10 +162,10 @@ const TABS = [
     component: SalairesCotisations,
   },
   {
-    id: "rentabilite",
-    label: "Rentabilité",
-    icon: TrendingUp,
-    component: Rentabilite,
+    id: "pilotage",
+    label: "Pilotage",
+    icon: BarChart3,
+    component: PilotageGlobal,
   },
   { id: "stock", label: "Stock", icon: Package, component: Stock },
   {
@@ -167,12 +173,6 @@ const TABS = [
     label: "Ventes du jour",
     icon: ShoppingCart,
     component: VentesDuJour,
-  },
-  {
-    id: "marges",
-    label: "Prévisionnel Économique",
-    icon: BarChart3,
-    component: Marges,
   },
 ];
 
@@ -227,7 +227,7 @@ export default function App() {
 
       {/* Main */}
       <main className="flex-1 container max-w-7xl mx-auto px-4 py-6">
-        <Tabs defaultValue="parametres">
+        <Tabs defaultValue="dashboard">
           <TabsList
             className="h-auto flex-wrap gap-1 bg-card border shadow-xs mb-6 p-1 rounded-lg"
             data-ocid="nav.tab"

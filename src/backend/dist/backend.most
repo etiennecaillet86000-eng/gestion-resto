@@ -1,0 +1,96 @@
+// Version: 1.0.0
+type AssocieGerant__144128390 =
+  {id : Text; nom : Text; remunerationAnnuelle : Float; statut : Text};
+type Emprunt__913501935 =
+  {
+    dateDebut : Text;
+    differeMois : Nat;
+    dureeMois : Nat;
+    id : Text;
+    montant : Float;
+    nom : Text;
+    tauxAnnuel : Float
+  };
+type Ingredient__830977812 =
+  {
+    id : Text;
+    nom : Text;
+    prixUnitaireHT : Float;
+    seuilSecurite : Float;
+    stockInitial : Float;
+    unite : Text
+  };
+type LigneAmortissement__245076235 =
+  {coutTotal : Float; dureeMois : Nat; id : Text; nom : Text};
+type LigneFraisFixes__42477358 =
+  {
+    montantMensuelAvecRemu : Float;
+    montantMensuelHorsRemu : Float;
+    nom : Text
+  };
+type MouvementStockLegacy__65012223 =
+  {
+    date : Text;
+    id : Text;
+    ingredientId : Text;
+    motif : Text;
+    quantite : Float;
+    type_ : Text
+  };
+type MouvementStock__527001464 =
+  {
+    date : Text;
+    id : Text;
+    ingredientId : Text;
+    motif : Text;
+    quantite : Float;
+    typeOp : Text
+  };
+type RecetteIngredient__1009927363 =
+  {ingredientId : Text; quantite : Float; unite : Text};
+type Recette__39789750 =
+  {
+    categorie : Text;
+    categorieTVA : Text;
+    consommablesHT : Float;
+    id : Text;
+    ingredients : [RecetteIngredient__1009927363];
+    nom : Text;
+    prixVenteTTC : Float;
+    tauxTVA : Float
+  };
+type Salarie__853465949 =
+  {id : Text; nom : Text; poste : Text; salaireAnnuelBrut : Float};
+type VenteRecette__438556407 =
+  {
+    caTtcCapture : Float;
+    coutMatiereTotalCapture : Float;
+    date : Text;
+    id : Text;
+    quantite : Float;
+    recetteId : Text
+  };
+actor {
+  stable var amortissements : [LigneAmortissement__245076235];
+  stable var associesGerants : [AssocieGerant__144128390];
+  stable var emprunts : [Emprunt__913501935];
+  stable var fraisFixes : [LigneFraisFixes__42477358];
+  stable var ingredients : [Ingredient__830977812];
+  stable var joursOuvertureParSemaineSV : Float;
+  stable var mixProduitParCategorieSV : [(Text, Float)];
+  stable var mouvementsStock : [MouvementStockLegacy__65012223];
+  stable var mouvementsStockV2 : [MouvementStock__527001464];
+  stable var nextId : Nat;
+  stable var parametres :
+    {
+      nbClientsParSemaine : Float;
+      nbSemainesSaison : Float;
+      tauxFoodCostParCategorie : [(Text, Float)];
+      ticketMoyenHT : Float
+    };
+  stable var parametresJuridiques :
+    {formeJuridique : Text; regimeFiscal : Text; regimeSocial : Text};
+  stable var recettes : [Recette__39789750];
+  stable var salaries : [Salarie__853465949];
+  stable var ventesRecettes : [VenteRecette__438556407]
+};

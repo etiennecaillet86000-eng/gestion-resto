@@ -103,7 +103,9 @@ function formatMoisDate(dateDebut: string, offsetMois: number): string {
 }
 
 function calcAmortissementPret(e: Emprunt): LigneAmortPret[] {
-  const { montant, tauxAnnuel, dureeMois, dateDebut, differeMois } = e;
+  const { montant, tauxAnnuel, dateDebut } = e;
+  const dureeMois = Number(e.dureeMois);
+  const differeMois = Number(e.differeMois);
   if (montant <= 0 || dureeMois <= 0) return [];
 
   const tauxMensuel = tauxAnnuel / 100 / 12;
@@ -148,7 +150,8 @@ function calcAmortissementPret(e: Emprunt): LigneAmortPret[] {
 }
 
 function calcMensualiteEmprunt(e: Omit<Emprunt, "id">): number {
-  const { montant, tauxAnnuel, dureeMois } = e;
+  const { montant, tauxAnnuel } = e;
+  const dureeMois = Number(e.dureeMois);
   if (montant <= 0 || dureeMois <= 0) return 0;
   if (tauxAnnuel === 0) return montant / dureeMois;
   const tm = tauxAnnuel / 100 / 12;
@@ -207,9 +210,9 @@ export default function Emprunts() {
       nom: e.nom,
       montantStr: e.montant === 0 ? "" : String(e.montant),
       tauxStr: e.tauxAnnuel === 0 ? "" : String(e.tauxAnnuel),
-      dureeStr: e.dureeMois === 0 ? "" : String(e.dureeMois),
+      dureeStr: Number(e.dureeMois) === 0 ? "" : String(Number(e.dureeMois)),
       dateDebut: e.dateDebut,
-      differeStr: String(e.differeMois),
+      differeStr: String(Number(e.differeMois)),
     });
     setEmpruntOpen(true);
   }
@@ -219,9 +222,9 @@ export default function Emprunts() {
       nom: empruntForm.nom,
       montant: Number.parseFloat(empruntForm.montantStr) || 0,
       tauxAnnuel: Number.parseFloat(empruntForm.tauxStr) || 0,
-      dureeMois: Number.parseInt(empruntForm.dureeStr) || 0,
+      dureeMois: BigInt(Number.parseInt(empruntForm.dureeStr) || 0),
       dateDebut: empruntForm.dateDebut,
-      differeMois: Number.parseInt(empruntForm.differeStr) || 0,
+      differeMois: BigInt(Number.parseInt(empruntForm.differeStr) || 0),
     };
   }
 
@@ -279,14 +282,14 @@ export default function Emprunts() {
         await createAmortMut.mutateAsync({
           nom: investForm.nom.trim(),
           coutTotal: cout,
-          dureeMois: dureeAns, // field now stores YEARS
+          dureeMois: BigInt(dureeAns), // field now stores YEARS
         });
       } else {
         // Non-amortissable: store with dureeMois = 0
         await createAmortMut.mutateAsync({
           nom: investForm.nom.trim(),
           coutTotal: cout,
-          dureeMois: 0,
+          dureeMois: BigInt(0),
         });
       }
       toast.success("Investissement enregistré");
@@ -988,9 +991,13 @@ export default function Emprunts() {
                       nom: empruntForm.nom,
                       montant: Number.parseFloat(empruntForm.montantStr) || 0,
                       tauxAnnuel: Number.parseFloat(empruntForm.tauxStr) || 0,
-                      dureeMois: Number.parseInt(empruntForm.dureeStr) || 0,
+                      dureeMois: BigInt(
+                        Number.parseInt(empruntForm.dureeStr) || 0,
+                      ),
                       dateDebut: empruntForm.dateDebut,
-                      differeMois: Number.parseInt(empruntForm.differeStr) || 0,
+                      differeMois: BigInt(
+                        Number.parseInt(empruntForm.differeStr) || 0,
+                      ),
                     }),
                   )}{" "}
                   / mois
