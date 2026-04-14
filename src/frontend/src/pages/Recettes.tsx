@@ -46,7 +46,16 @@ import {
   margeBrute,
   prixHT,
 } from "@/utils/format";
-import { Pencil, Plus, PlusCircle, Trash2, X } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Plus,
+  PlusCircle,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FOOD_COST_CATEGORIES } from "./PilotageGlobal";
@@ -92,11 +101,56 @@ export default function Recettes() {
   const [editing, setEditing] = useState<Recette | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
 
+  type RecetteSortKey = "nom" | "categorie" | "prixVenteTTC" | "coutMatiere";
+  const [sortKey, setSortKey] = useState<RecetteSortKey | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  function handleSort(key: RecetteSortKey) {
+    if (sortKey === key) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortOrder("asc");
+    }
+  }
+
+  function SortIcon({ col }: { col: RecetteSortKey }) {
+    if (sortKey !== col)
+      return (
+        <ArrowUpDown className="ml-1 inline h-3.5 w-3.5 text-muted-foreground" />
+      );
+    return sortOrder === "asc" ? (
+      <ChevronUp className="ml-1 inline h-3.5 w-3.5" />
+    ) : (
+      <ChevronDown className="ml-1 inline h-3.5 w-3.5" />
+    );
+  }
+
   const ingredientsMap = useMemo(() => {
     const m = new Map<string, (typeof ingredients)[0]>();
     for (const ing of ingredients) m.set(ing.id, ing);
     return m;
   }, [ingredients]);
+
+  const sortedRecettes = useMemo(() => {
+    if (!sortKey) return recettes;
+    return [...recettes].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "nom") {
+        cmp = a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" });
+      } else if (sortKey === "categorie") {
+        cmp = a.categorie.localeCompare(b.categorie, "fr", {
+          sensitivity: "base",
+        });
+      } else if (sortKey === "prixVenteTTC") {
+        cmp = a.prixVenteTTC - b.prixVenteTTC;
+      } else if (sortKey === "coutMatiere") {
+        cmp =
+          coutMatiereHT(a, ingredientsMap) - coutMatiereHT(b, ingredientsMap);
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [recettes, sortKey, sortOrder, ingredientsMap]);
 
   function openAdd() {
     setEditing(null);
@@ -264,11 +318,35 @@ export default function Recettes() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead>Nom</TableHead>
-              <TableHead>Catégorie</TableHead>
+              <TableHead
+                className="cursor-pointer select-none"
+                onClick={() => handleSort("nom")}
+                data-ocid="recettes.nom.toggle"
+              >
+                Nom <SortIcon col="nom" />
+              </TableHead>
+              <TableHead
+                className="cursor-pointer select-none"
+                onClick={() => handleSort("categorie")}
+                data-ocid="recettes.categorie.toggle"
+              >
+                Catégorie <SortIcon col="categorie" />
+              </TableHead>
               <TableHead>TVA</TableHead>
-              <TableHead className="text-right">Coût matière HT</TableHead>
-              <TableHead className="text-right">Prix TTC saisi</TableHead>
+              <TableHead
+                className="text-right cursor-pointer select-none"
+                onClick={() => handleSort("coutMatiere")}
+                data-ocid="recettes.cout_matiere.toggle"
+              >
+                Coût matière HT <SortIcon col="coutMatiere" />
+              </TableHead>
+              <TableHead
+                className="text-right cursor-pointer select-none"
+                onClick={() => handleSort("prixVenteTTC")}
+                data-ocid="recettes.prix_ttc.toggle"
+              >
+                Prix TTC saisi <SortIcon col="prixVenteTTC" />
+              </TableHead>
               <TableHead className="text-right">Marge brute</TableHead>
               <TableHead className="w-[80px]" />
             </TableRow>
@@ -295,7 +373,7 @@ export default function Recettes() {
                 </TableCell>
               </TableRow>
             ) : (
-              recettes.map((r, idx) => {
+              sortedRecettes.map((r, idx) => {
                 const cout = coutMatiereHT(r, ingredientsMap);
                 const ph = prixHT(r.prixVenteTTC, r.tauxTVA);
                 const marge = margeBrute(ph, cout);
@@ -558,84 +636,86 @@ export default function Recettes() {
                   <PlusCircle className="h-3.5 w-3.5 mr-1" /> Ajouter
                 </Button>
               </div>
-              {form.ingredients.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-3 border rounded-lg border-dashed">
-                  Aucun ingrédient ajouté
-                </p>
-              )}
-              {form.ingredients.map((ri, idx) => {
-                const ing = ingredientsMap.get(ri.ingredientId);
-                return (
-                  <div
-                    key={`ri-${ri.ingredientId}-${idx}`}
-                    className="flex gap-2 items-center"
-                  >
-                    <Select
-                      value={ri.ingredientId}
-                      onValueChange={(v) => {
-                        const found = ingredientsMap.get(v);
-                        updateIngredientLine(idx, {
-                          ingredientId: v,
-                          unite: found?.unite ?? ri.unite,
-                        });
-                      }}
+              <div className="max-h-[300px] overflow-y-auto space-y-2">
+                {form.ingredients.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-3 border rounded-lg border-dashed">
+                    Aucun ingrédient ajouté
+                  </p>
+                )}
+                {form.ingredients.map((ri, idx) => {
+                  const ing = ingredientsMap.get(ri.ingredientId);
+                  return (
+                    <div
+                      key={`ri-${ri.ingredientId}-${idx}`}
+                      className="flex gap-2 items-center"
                     >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ingredients.map((i) => (
-                          <SelectItem key={i.id} value={i.id}>
-                            {i.nom} ({i.unite})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      placeholder="Qté"
-                      className="w-24"
-                      value={ri.quantite}
-                      onChange={(e) =>
-                        updateIngredientLine(idx, {
-                          quantite: Number.parseFloat(e.target.value) || 0,
-                        })
-                      }
-                    />
-                    <Select
-                      value={ri.unite}
-                      onValueChange={(v) =>
-                        updateIngredientLine(idx, { unite: v })
-                      }
-                    >
-                      <SelectTrigger className="w-20">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {UNITES.map((u) => (
-                          <SelectItem key={u} value={u}>
-                            {u}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-xs text-muted-foreground w-20 text-right">
-                      {ing ? fmtEur(ri.quantite * ing.prixUnitaireHT) : "-"}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => removeIngredientLine(idx)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                );
-              })}
+                      <Select
+                        value={ri.ingredientId}
+                        onValueChange={(v) => {
+                          const found = ingredientsMap.get(v);
+                          updateIngredientLine(idx, {
+                            ingredientId: v,
+                            unite: found?.unite ?? ri.unite,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ingredients.map((i) => (
+                            <SelectItem key={i.id} value={i.id}>
+                              {i.nom} ({i.unite})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="Qté"
+                        className="w-24"
+                        value={ri.quantite}
+                        onChange={(e) =>
+                          updateIngredientLine(idx, {
+                            quantite: Number.parseFloat(e.target.value) || 0,
+                          })
+                        }
+                      />
+                      <Select
+                        value={ri.unite}
+                        onValueChange={(v) =>
+                          updateIngredientLine(idx, { unite: v })
+                        }
+                      >
+                        <SelectTrigger className="w-20">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNITES.map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {u}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-xs text-muted-foreground w-20 text-right">
+                        {ing ? fmtEur(ri.quantite * ing.prixUnitaireHT) : "-"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => removeIngredientLine(idx)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
           <DialogFooter>

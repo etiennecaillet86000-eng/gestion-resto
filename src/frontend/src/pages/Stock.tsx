@@ -29,23 +29,58 @@ import {
   useDeleteMouvement,
   useIngredients,
   useMouvementsStock,
+  useRecettes,
   useUpdateIngredient,
+  useVentesRecettes,
 } from "@/hooks/useQueries";
 import type { Ingredient } from "@/hooks/useQueries";
-import { AlertTriangle, Plus, Save, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 const SKELETON_ING = [0, 1, 2, 3, 4];
-const SKELETON_COLS_ING = [0, 1, 2, 3, 4, 5, 6, 7];
+const SKELETON_COLS_THEO = [0, 1, 2, 3, 4, 5, 6];
 const SKELETON_MVT = [0, 1, 2];
 const SKELETON_COLS_MVT = [0, 1, 2, 3, 4, 5];
 
 type ConfigState = Record<string, { stockStr: string; seuilStr: string }>;
 
+/** Normalise un typeOp en minuscules sans accents pour comparer */
+function normaliseTypeOp(typeOp: string): string {
+  return typeOp
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
+function isEntree(typeOp: string): boolean {
+  const n = normaliseTypeOp(typeOp);
+  return n === "entree" || n === "entrée" || n.startsWith("entr");
+}
+
+function isSortieOuPerte(typeOp: string): boolean {
+  const n = normaliseTypeOp(typeOp);
+  return (
+    n === "sortie" ||
+    n === "perte" ||
+    n.startsWith("sort") ||
+    n.startsWith("pert")
+  );
+}
+
 export default function Stock() {
   const { data: ingredients = [], isLoading: loadingIng } = useIngredients();
   const { data: mouvements = [], isLoading: loadingMvt } = useMouvementsStock();
+  const { data: recettes = [] } = useRecettes();
+  const { data: ventes = [] } = useVentesRecettes();
   const createMvt = useCreateMouvement();
   const deleteMvt = useDeleteMouvement();
   const updateIng = useUpdateIngredient();
@@ -61,8 +96,30 @@ export default function Stock() {
   });
 
   const [configState, setConfigState] = useState<ConfigState>({});
+  const [sortKey, setSortKey] = useState<
+    "nom" | "stockInitial" | "stockActuel" | null
+  >(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  // Initialize config state from ingredients using functional updater to avoid stale closure
+  function handleSort(key: "nom" | "stockInitial" | "stockActuel") {
+    if (sortKey === key) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortOrder("asc");
+    }
+  }
+
+  function SortIcon({ col }: { col: "nom" | "stockInitial" | "stockActuel" }) {
+    if (sortKey !== col)
+      return <ArrowUpDown className="ml-1 h-3.5 w-3.5 inline opacity-50" />;
+    return sortOrder === "asc" ? (
+      <ChevronUp className="ml-1 h-3.5 w-3.5 inline" />
+    ) : (
+      <ChevronDown className="ml-1 h-3.5 w-3.5 inline" />
+    );
+  }
+
   useEffect(() => {
     setConfigState((prev) => {
       const next: ConfigState = {};
@@ -80,50 +137,75 @@ export default function Stock() {
     });
   }, [ingredients]);
 
-  const stockActuel = useMemo(() => {
-    const map = new Map<string, number>();
+  /**
+   * Calcul du Stock Théorique pour chaque ingrédient.
+   * Retourne une Map<ingredientId, { stockInitial, entrees, sortiesManuel, consommationVentes, stockActuel }>
+   */
+  const stockTheorique = useMemo(() => {
+    type StockCalc = {
+      stockInitial: number;
+      entrees: number;
+      sortiesManuel: number;
+      consommationVentes: number;
+      stockActuel: number;
+    };
+    const map = new Map<string, StockCalc>();
+
+    // Initialise chaque ingrédient
     for (const ing of ingredients) {
-      map.set(ing.id, ing.stockInitial);
+      map.set(ing.id, {
+        stockInitial: ing.stockInitial,
+        entrees: 0,
+        sortiesManuel: 0,
+        consommationVentes: 0,
+        stockActuel: 0,
+      });
     }
+
+    // Entrées et sorties manuelles depuis les mouvements
     for (const m of mouvements) {
-      const cur = map.get(m.ingredientId) ?? 0;
-      if (m.typeOp === "Entrée") map.set(m.ingredientId, cur + m.quantite);
-      else map.set(m.ingredientId, cur - m.quantite);
+      const entry = map.get(m.ingredientId);
+      if (!entry) continue;
+      if (isEntree(m.typeOp)) {
+        entry.entrees += m.quantite;
+      } else if (isSortieOuPerte(m.typeOp)) {
+        entry.sortiesManuel += m.quantite;
+      }
     }
+
+    // Consommation automatique via les ventes de recettes
+    for (const vente of ventes) {
+      const recette = recettes.find((r) => r.id === vente.recetteId);
+      if (!recette) continue;
+      for (const ligneRecette of recette.ingredients) {
+        const entry = map.get(ligneRecette.ingredientId);
+        if (!entry) continue;
+        // Quantité consommée = quantité vendue × quantité de l'ingrédient dans la recette
+        entry.consommationVentes += vente.quantite * ligneRecette.quantite;
+      }
+    }
+
+    // Calcul final du stock actuel théorique
+    for (const entry of map.values()) {
+      entry.stockActuel =
+        entry.stockInitial +
+        entry.entrees -
+        entry.sortiesManuel -
+        entry.consommationVentes;
+    }
+
     return map;
-  }, [ingredients, mouvements]);
+  }, [ingredients, mouvements, recettes, ventes]);
 
-  const mouvStats = useMemo(() => {
-    const entr = new Map<string, number>();
-    const sort = new Map<string, number>();
-    for (const m of mouvements) {
-      if (m.typeOp === "Entrée")
-        entr.set(m.ingredientId, (entr.get(m.ingredientId) ?? 0) + m.quantite);
-      else
-        sort.set(m.ingredientId, (sort.get(m.ingredientId) ?? 0) + m.quantite);
-    }
-    return { entr, sort };
-  }, [mouvements]);
-
-  function isStockBas(stock: number, ing: Ingredient): boolean {
-    return ing.seuilSecurite > 0 && stock < ing.seuilSecurite;
+  function isAlerte(stockActuel: number, ing: Ingredient): boolean {
+    return ing.seuilSecurite > 0 && stockActuel <= ing.seuilSecurite;
   }
 
-  function getStatut(stock: number, ing: Ingredient) {
-    if (ing.seuilSecurite > 0 && stock < ing.seuilSecurite)
-      return {
-        label: "RUPTURE",
-        cls: "bg-destructive text-destructive-foreground",
-      };
-    if (ing.seuilSecurite > 0 && stock < ing.seuilSecurite * 2)
-      return { label: "FAIBLE", cls: "bg-warning text-warning-foreground" };
-    if (ing.seuilSecurite === 0)
-      return { label: "N/D", cls: "bg-muted text-muted-foreground" };
-    return { label: "OK", cls: "bg-success text-success-foreground" };
+  function fmtQty(val: number): string {
+    return val.toLocaleString("fr-FR", { maximumFractionDigits: 3 });
   }
 
   async function handleAdd() {
-    console.log("[Stock] handleAdd called, form:", JSON.stringify(form));
     if (!form.ingredientId) {
       toast.error("Sélectionnez un ingrédient");
       return;
@@ -145,7 +227,6 @@ export default function Stock() {
       setForm((f) => ({ ...f, quantiteStr: "", motif: "" }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("[handleAdd] error:", e);
       toast.error(`Erreur lors de l'ajout : ${msg}`);
     }
   }
@@ -156,7 +237,6 @@ export default function Stock() {
       toast.success("Mouvement supprimé");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("[handleDelete] error:", e);
       toast.error(`Erreur lors de la suppression : ${msg}`);
     }
   }
@@ -171,11 +251,7 @@ export default function Stock() {
     const stockInitial = parseNumber(cfg.stockStr);
     const seuilSecurite = parseNumber(cfg.seuilStr);
     try {
-      await updateIng.mutateAsync({
-        ...ing,
-        stockInitial,
-        seuilSecurite,
-      });
+      await updateIng.mutateAsync({ ...ing, stockInitial, seuilSecurite });
       toast.success(`Stock configuré pour ${ing.nom}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -194,35 +270,70 @@ export default function Stock() {
     }));
   }
 
+  const sortedIngredients = [...ingredients].sort((a, b) => {
+    if (!sortKey) return 0;
+    const dir = sortOrder === "asc" ? 1 : -1;
+    if (sortKey === "nom") return a.nom.localeCompare(b.nom, "fr") * dir;
+    if (sortKey === "stockInitial")
+      return (a.stockInitial - b.stockInitial) * dir;
+    // stockActuel: use computed value from stockTheorique map
+    const aCalc = stockTheorique.get(a.id);
+    const bCalc = stockTheorique.get(b.id);
+    const aVal = aCalc ? aCalc.stockActuel : a.stockInitial;
+    const bVal = bCalc ? bCalc.stockActuel : b.stockInitial;
+    return (aVal - bVal) * dir;
+  });
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Gestion de Stock</h2>
+        <h2 className="text-lg font-semibold">Stock Théorique</h2>
         <p className="text-sm text-muted-foreground">
-          Suivi en temps réel. Stock Actuel = Stock Initial + Entrées - Sorties
+          Stock Actuel = Stock Initial + Entrées − Pertes manuelles −
+          Consommation Ventes
         </p>
       </div>
 
-      {/* ── Tableau stock actuel ───────────────────────────────────────── */}
-      <div className="rounded-lg border bg-card shadow-card">
+      {/* ── Tableau Stock Théorique ─────────────────────────────────────── */}
+      <div className="rounded-lg border bg-card shadow-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead>Ingrédient</TableHead>
+              <TableHead
+                className="cursor-pointer select-none"
+                onClick={() => handleSort("nom")}
+              >
+                Ingrédient <SortIcon col="nom" />
+              </TableHead>
               <TableHead>Unité</TableHead>
-              <TableHead className="text-right">Seuil d'alerte</TableHead>
-              <TableHead className="text-right">Stock initial</TableHead>
-              <TableHead className="text-right">Entrées</TableHead>
-              <TableHead className="text-right">Sorties</TableHead>
-              <TableHead className="text-right">Stock actuel</TableHead>
-              <TableHead className="text-center">Statut</TableHead>
+              <TableHead
+                className="text-right cursor-pointer select-none"
+                onClick={() => handleSort("stockInitial")}
+              >
+                Stock Initial <SortIcon col="stockInitial" />
+              </TableHead>
+              <TableHead className="text-right text-green-700">
+                Entrées (+)
+              </TableHead>
+              <TableHead className="text-right text-amber-700">
+                Pertes (−)
+              </TableHead>
+              <TableHead className="text-right text-blue-700">
+                Ventes (−)
+              </TableHead>
+              <TableHead
+                className="text-right font-semibold cursor-pointer select-none"
+                onClick={() => handleSort("stockActuel")}
+              >
+                Stock Actuel (=) <SortIcon col="stockActuel" />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loadingIng ? (
               SKELETON_ING.map((row) => (
                 <TableRow key={row}>
-                  {SKELETON_COLS_ING.map((col) => (
+                  {SKELETON_COLS_THEO.map((col) => (
                     <TableCell key={col}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -232,7 +343,7 @@ export default function Stock() {
             ) : ingredients.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={7}
                   className="text-center text-muted-foreground py-8"
                   data-ocid="stock.empty_state"
                 >
@@ -240,56 +351,67 @@ export default function Stock() {
                 </TableCell>
               </TableRow>
             ) : (
-              ingredients.map((ing, idx) => {
-                const stock = stockActuel.get(ing.id) ?? ing.stockInitial;
-                const totalE = mouvStats.entr.get(ing.id) ?? 0;
-                const totalS = mouvStats.sort.get(ing.id) ?? 0;
-                const statut = getStatut(stock, ing);
-                const alerte = isStockBas(stock, ing);
+              sortedIngredients.map((ing, idx) => {
+                const calc = stockTheorique.get(ing.id) ?? {
+                  stockInitial: ing.stockInitial,
+                  entrees: 0,
+                  sortiesManuel: 0,
+                  consommationVentes: 0,
+                  stockActuel: ing.stockInitial,
+                };
+                const alerte = isAlerte(calc.stockActuel, ing);
                 return (
-                  <TableRow key={ing.id} data-ocid={`stock.item.${idx + 1}`}>
+                  <TableRow
+                    key={ing.id}
+                    data-ocid={`stock.item.${idx + 1}`}
+                    className={alerte ? "bg-red-50 hover:bg-red-100" : ""}
+                  >
+                    {/* Nom */}
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-1.5">
                         {alerte && (
-                          <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                          <span title="Stock sous seuil d'alerte">⚠️</span>
                         )}
                         {ing.nom}
                       </div>
                     </TableCell>
+
+                    {/* Unité */}
                     <TableCell className="text-muted-foreground">
                       {ing.unite}
                     </TableCell>
+
+                    {/* Stock Initial */}
                     <TableCell className="text-right">
-                      {ing.seuilSecurite > 0 ? (
-                        `${ing.seuilSecurite} ${ing.unite}`
-                      ) : (
-                        <span className="text-muted-foreground text-xs">
-                          Non défini
-                        </span>
-                      )}
+                      {fmtQty(calc.stockInitial)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {ing.stockInitial} {ing.unite}
+
+                    {/* Entrées */}
+                    <TableCell className="text-right text-green-700 font-medium">
+                      {calc.entrees > 0 ? `+${fmtQty(calc.entrees)}` : "0"}
                     </TableCell>
-                    <TableCell className="text-right text-green-600">
-                      {totalE > 0 ? `+${totalE}` : "0"}
+
+                    {/* Pertes manuelles */}
+                    <TableCell className="text-right text-amber-700 font-medium">
+                      {calc.sortiesManuel > 0
+                        ? `−${fmtQty(calc.sortiesManuel)}`
+                        : "0"}
                     </TableCell>
-                    <TableCell className="text-right text-red-600">
-                      {totalS > 0 ? `-${totalS}` : "0"}
+
+                    {/* Consommation ventes */}
+                    <TableCell className="text-right text-blue-700 font-medium">
+                      {calc.consommationVentes > 0
+                        ? `−${fmtQty(calc.consommationVentes)}`
+                        : "0"}
                     </TableCell>
+
+                    {/* Stock Actuel */}
                     <TableCell
                       className={`text-right font-semibold ${
                         alerte ? "text-destructive" : ""
                       }`}
                     >
-                      {stock.toLocaleString("fr-FR", {
-                        maximumFractionDigits: 2,
-                      })}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge className={`text-xs ${statut.cls}`}>
-                        {statut.label}
-                      </Badge>
+                      {fmtQty(calc.stockActuel)}
                     </TableCell>
                   </TableRow>
                 );
@@ -307,8 +429,8 @@ export default function Stock() {
               Configuration du stock par ingrédient
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Définissez le stock initial et le seuil d'alerte. Le stock actuel
-              est recalculé automatiquement.
+              Définissez le stock initial et le seuil d'alerte. Le stock
+              théorique est recalculé automatiquement.
             </p>
           </CardHeader>
           <CardContent>
@@ -378,6 +500,10 @@ export default function Stock() {
           <CardTitle className="text-base">
             Ajouter un mouvement de stock
           </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Saisissez manuellement vos arrivages fournisseurs (Entrée) ou
+            produits jetés (Sortie).
+          </p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
@@ -422,8 +548,8 @@ export default function Stock() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Entrée">Entrée</SelectItem>
-                  <SelectItem value="Sortie">Sortie</SelectItem>
+                  <SelectItem value="Entrée">Entrée (arrivage)</SelectItem>
+                  <SelectItem value="Sortie">Sortie (perte / casse)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -461,7 +587,7 @@ export default function Stock() {
       {/* ── Historique ───────────────────────────────────────────────── */}
       <div>
         <h3 className="text-base font-semibold mb-3">
-          Historique des mouvements
+          Historique des mouvements manuels
         </h3>
         <div className="rounded-lg border bg-card shadow-card">
           <Table>
@@ -498,6 +624,7 @@ export default function Stock() {
               ) : (
                 [...mouvements].reverse().map((m, idx) => {
                   const ing = ingredients.find((i) => i.id === m.ingredientId);
+                  const entree = isEntree(m.typeOp);
                   return (
                     <TableRow key={m.id} data-ocid={`stock.row.${idx + 1}`}>
                       <TableCell className="text-sm">{m.date}</TableCell>
@@ -506,11 +633,9 @@ export default function Stock() {
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={
-                            m.typeOp === "Entrée" ? "default" : "secondary"
-                          }
+                          variant={entree ? "default" : "secondary"}
                           className={
-                            m.typeOp === "Entrée"
+                            entree
                               ? "bg-green-100 text-green-800 hover:bg-green-100"
                               : "bg-red-100 text-red-800 hover:bg-red-100"
                           }

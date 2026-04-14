@@ -37,7 +37,14 @@ import {
 } from "@/hooks/useQueries";
 import type { Ingredient } from "@/hooks/useQueries";
 import { fmtEur } from "@/utils/format";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -67,6 +74,34 @@ export default function Ingredients() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Ingredient | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
+  const [sortKey, setSortKey] = useState<"nom" | "prixUnitaireHT" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  function handleSort(key: "nom" | "prixUnitaireHT") {
+    if (sortKey === key) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortOrder("asc");
+    }
+  }
+
+  function SortIcon({ col }: { col: "nom" | "prixUnitaireHT" }) {
+    if (sortKey !== col)
+      return <ArrowUpDown className="ml-1 h-3.5 w-3.5 inline opacity-50" />;
+    return sortOrder === "asc" ? (
+      <ChevronUp className="ml-1 h-3.5 w-3.5 inline" />
+    ) : (
+      <ChevronDown className="ml-1 h-3.5 w-3.5 inline" />
+    );
+  }
+
+  const sortedIngredients = [...ingredients].sort((a, b) => {
+    if (!sortKey) return 0;
+    const dir = sortOrder === "asc" ? 1 : -1;
+    if (sortKey === "nom") return a.nom.localeCompare(b.nom, "fr") * dir;
+    return (a.prixUnitaireHT - b.prixUnitaireHT) * dir;
+  });
 
   function openAdd() {
     setEditing(null);
@@ -151,9 +186,19 @@ export default function Ingredients() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead>Nom</TableHead>
+              <TableHead
+                className="cursor-pointer select-none"
+                onClick={() => handleSort("nom")}
+              >
+                Nom <SortIcon col="nom" />
+              </TableHead>
               <TableHead>Unité</TableHead>
-              <TableHead className="text-right">Prix unitaire HT</TableHead>
+              <TableHead
+                className="text-right cursor-pointer select-none"
+                onClick={() => handleSort("prixUnitaireHT")}
+              >
+                Prix unitaire HT <SortIcon col="prixUnitaireHT" />
+              </TableHead>
               <TableHead className="w-[80px]" />
             </TableRow>
           </TableHeader>
@@ -179,7 +224,7 @@ export default function Ingredients() {
                 </TableCell>
               </TableRow>
             ) : (
-              ingredients.map((ing, idx) => (
+              sortedIngredients.map((ing, idx) => (
                 <TableRow
                   key={ing.id}
                   data-ocid={`ingredients.item.${idx + 1}`}

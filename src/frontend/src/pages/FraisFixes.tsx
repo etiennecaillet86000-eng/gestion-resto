@@ -31,6 +31,7 @@ const LIGNES_DEFAUT = [
   "Énergie/eau",
   "Communication/marketing",
   "Animation/musique",
+  "Autres charges",
   "Salaire/cotisations",
   "Emprunt",
   "Stock boissons/nourritures",
@@ -40,6 +41,21 @@ const LIGNES_DEFAUT = [
 // (ex: "Stock boissons / nourritures" vs "Stock boissons/nourritures")
 function normNom(s: string) {
   return s.toLowerCase().replace(/[\s/]/g, "");
+}
+
+// Mapping persistant : renomme l'ancien "Equipements Cuisine / bar (Amortissement)"
+// en "Autres charges" pour l'affichage et la sauvegarde
+function normalizeLigneName(nom: string): string {
+  const low = nom.toLowerCase();
+  if (
+    low.includes("equipements cuisine") ||
+    low.includes("quipements cuisine") ||
+    low.includes("amortissement") ||
+    low.includes("equipement cuisine")
+  ) {
+    return "Autres charges";
+  }
+  return nom;
 }
 function isStockRow(nom: string) {
   return normNom(nom).startsWith("stockboissons");
@@ -85,10 +101,16 @@ export default function FraisFixes() {
     () => new Date().toISOString().slice(0, 7), // "YYYY-MM"
   );
 
-  // Initialiser lignes
+  // Initialiser lignes — applique normalizeLigneName pour mapper l'ancien nom
+  // "Equipements Cuisine / bar (Amortissement)" vers "Autres charges"
   useEffect(() => {
     if (saved.length > 0) {
-      setLignes(saved);
+      // Normaliser les noms venant du backend (mapping ancien → nouveau)
+      const normalized = saved.map((l) => ({
+        ...l,
+        nom: normalizeLigneName(l.nom),
+      }));
+      setLignes(normalized);
     } else {
       setLignes(
         LIGNES_DEFAUT.map((nom) => ({
@@ -202,9 +224,11 @@ export default function FraisFixes() {
       "[FraisFixes] handleSave called, lignes:",
       JSON.stringify(lignes),
     );
+    // Normalize names before saving: map any legacy "Equipements Cuisine" to "Autres charges"
     // Maintain backend compatibility: send montantMensuelHorsRemu = montantMensuelAvecRemu
     const lignesCompat = lignes.map((l) => ({
       ...l,
+      nom: normalizeLigneName(l.nom),
       montantMensuelHorsRemu: l.montantMensuelAvecRemu,
     }));
     try {

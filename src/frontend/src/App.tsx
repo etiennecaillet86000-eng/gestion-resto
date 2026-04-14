@@ -15,6 +15,7 @@ import Emprunts from "@/pages/Emprunts";
 import FraisFixes from "@/pages/FraisFixes";
 import Ingredients from "@/pages/Ingredients";
 import ParametresJuridiques from "@/pages/ParametresJuridiques";
+import PilotageEntreprise from "@/pages/PilotageEntreprise";
 import PilotageGlobal from "@/pages/PilotageGlobal";
 import Recettes from "@/pages/Recettes";
 import SalairesCotisations from "@/pages/SalairesCotisations";
@@ -23,6 +24,7 @@ import VentesDuJour from "@/pages/VentesDuJour";
 import {
   BarChart3,
   BookOpen,
+  Building2,
   ChefHat,
   Landmark,
   LayoutDashboard,
@@ -148,6 +150,12 @@ const TABS = [
     component: Ingredients,
   },
   { id: "recettes", label: "Recettes", icon: BookOpen, component: Recettes },
+  {
+    id: "pilotage-entreprise",
+    label: "Pilotage Entreprise",
+    icon: Building2,
+    component: PilotageEntreprise,
+  },
   { id: "frais", label: "Frais Fixes", icon: Receipt, component: FraisFixes },
   {
     id: "emprunts",

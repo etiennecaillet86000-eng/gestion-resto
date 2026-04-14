@@ -40,7 +40,15 @@ import {
 } from "@/hooks/useQueries";
 import type { AssocieGerant, Salarie } from "@/hooks/useQueries";
 import { fmtEur } from "@/utils/format";
-import { Pencil, Plus, Trash2, Users } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -243,6 +251,80 @@ export default function SalairesCotisations() {
   const isAssocPending = createAssocMut.isPending || updateAssocMut.isPending;
   const isSalPending = createSalMut.isPending || updateSalMut.isPending;
 
+  // ── Sort states ───────────────────────────────────────────────────────────────
+  const [sortKeyAssoc, setSortKeyAssoc] = useState<"nom" | "coutTotal" | null>(
+    null,
+  );
+  const [sortOrderAssoc, setSortOrderAssoc] = useState<"asc" | "desc">("asc");
+  const [sortKeySal, setSortKeySal] = useState<"nom" | "coutEmployeur" | null>(
+    null,
+  );
+  const [sortOrderSal, setSortOrderSal] = useState<"asc" | "desc">("asc");
+
+  function toggleSortAssoc(key: "nom" | "coutTotal") {
+    if (sortKeyAssoc === key) {
+      setSortOrderAssoc((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKeyAssoc(key);
+      setSortOrderAssoc("asc");
+    }
+  }
+
+  function toggleSortSal(key: "nom" | "coutEmployeur") {
+    if (sortKeySal === key) {
+      setSortOrderSal((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKeySal(key);
+      setSortOrderSal("asc");
+    }
+  }
+
+  function SortIconAssoc({ col }: { col: "nom" | "coutTotal" }) {
+    if (sortKeyAssoc !== col)
+      return <ArrowUpDown className="inline h-3 w-3 ml-1 opacity-50" />;
+    return sortOrderAssoc === "asc" ? (
+      <ChevronUp className="inline h-3 w-3 ml-1" />
+    ) : (
+      <ChevronDown className="inline h-3 w-3 ml-1" />
+    );
+  }
+
+  function SortIconSal({ col }: { col: "nom" | "coutEmployeur" }) {
+    if (sortKeySal !== col)
+      return <ArrowUpDown className="inline h-3 w-3 ml-1 opacity-50" />;
+    return sortOrderSal === "asc" ? (
+      <ChevronUp className="inline h-3 w-3 ml-1" />
+    ) : (
+      <ChevronDown className="inline h-3 w-3 ml-1" />
+    );
+  }
+
+  const sortedAssocies = [...associes].sort((a, b) => {
+    if (!sortKeyAssoc) return 0;
+    const dir = sortOrderAssoc === "asc" ? 1 : -1;
+    if (sortKeyAssoc === "nom") return a.nom.localeCompare(b.nom, "fr") * dir;
+    const coutA =
+      a.statut === "TNS"
+        ? calcTNS(a.remunerationAnnuelle).coutTotal
+        : calcAssimile(a.remunerationAnnuelle).coutEmployeur;
+    const coutB =
+      b.statut === "TNS"
+        ? calcTNS(b.remunerationAnnuelle).coutTotal
+        : calcAssimile(b.remunerationAnnuelle).coutEmployeur;
+    return (coutA - coutB) * dir;
+  });
+
+  const sortedSalaries = [...salaries].sort((a, b) => {
+    if (!sortKeySal) return 0;
+    const dir = sortOrderSal === "asc" ? 1 : -1;
+    if (sortKeySal === "nom") return a.nom.localeCompare(b.nom, "fr") * dir;
+    return (
+      (calcAssimile(a.salaireAnnuelBrut).coutEmployeur -
+        calcAssimile(b.salaireAnnuelBrut).coutEmployeur) *
+      dir
+    );
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -277,12 +359,28 @@ export default function SalairesCotisations() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40">
-                <TableHead>Nom</TableHead>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => toggleSortAssoc("nom")}
+                  data-ocid="salaires.associes.sort_nom"
+                >
+                  <span className="flex items-center">
+                    Nom <SortIconAssoc col="nom" />
+                  </span>
+                </TableHead>
                 <TableHead>Statut</TableHead>
                 <TableHead className="text-right">Rémunération</TableHead>
                 <TableHead className="text-right">Charges</TableHead>
                 <TableHead className="text-right">Net perçu</TableHead>
-                <TableHead className="text-right">Coût total / an</TableHead>
+                <TableHead
+                  className="text-right cursor-pointer select-none"
+                  onClick={() => toggleSortAssoc("coutTotal")}
+                  data-ocid="salaires.associes.sort_cout"
+                >
+                  <span className="flex items-center justify-end">
+                    Coût total / an <SortIconAssoc col="coutTotal" />
+                  </span>
+                </TableHead>
                 <TableHead className="w-[80px]" />
               </TableRow>
             </TableHeader>
@@ -308,7 +406,7 @@ export default function SalairesCotisations() {
                   </TableCell>
                 </TableRow>
               ) : (
-                associes.map((a, idx) => {
+                sortedAssocies.map((a, idx) => {
                   const remu = a.remunerationAnnuelle;
                   const isTNS = a.statut === "TNS";
                   const tns = calcTNS(remu);
@@ -405,14 +503,28 @@ export default function SalairesCotisations() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40">
-                <TableHead>Nom</TableHead>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => toggleSortSal("nom")}
+                  data-ocid="salaires.salaries.sort_nom"
+                >
+                  <span className="flex items-center">
+                    Nom <SortIconSal col="nom" />
+                  </span>
+                </TableHead>
                 <TableHead>Poste</TableHead>
                 <TableHead className="text-right">Brut annuel</TableHead>
                 <TableHead className="text-right">Ch. salariales</TableHead>
                 <TableHead className="text-right">Net annuel</TableHead>
                 <TableHead className="text-right">Ch. patronales</TableHead>
-                <TableHead className="text-right">
-                  Coût employeur / an
+                <TableHead
+                  className="text-right cursor-pointer select-none"
+                  onClick={() => toggleSortSal("coutEmployeur")}
+                  data-ocid="salaires.salaries.sort_cout"
+                >
+                  <span className="flex items-center justify-end">
+                    Coût employeur / an <SortIconSal col="coutEmployeur" />
+                  </span>
                 </TableHead>
                 <TableHead className="w-[80px]" />
               </TableRow>
@@ -439,7 +551,7 @@ export default function SalairesCotisations() {
                   </TableCell>
                 </TableRow>
               ) : (
-                salaries.map((s, idx) => {
+                sortedSalaries.map((s, idx) => {
                   const calc = calcAssimile(s.salaireAnnuelBrut);
                   return (
                     <TableRow

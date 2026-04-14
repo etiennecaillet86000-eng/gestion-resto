@@ -1,10 +1,13 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useIngredients,
+  useMixProduitParCategorie,
   useMouvementsStock,
   useRecettes,
+  useSaveMixProduitParCategorie,
   useVentesRecettes,
 } from "@/hooks/useQueries";
 import type {
@@ -18,11 +21,13 @@ import {
   CalendarOff,
   Info,
   Package,
+  Save,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, Tooltip } from "recharts";
+import { toast } from "sonner";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -31,26 +36,30 @@ type VenteAvecCapture = VenteRecette & {
   coutMatiereTotalCapture: number;
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
 
-const PIE_DATA = [
-  { name: "Snacking", value: 60 },
-  { name: "Boutique", value: 30 },
-  { name: "Traiteur", value: 10 },
-];
+const CATEGORIES = ["Snacking", "Boutique", "Traiteur"] as const;
+type Categorie = (typeof CATEGORIES)[number];
+
+const DEFAULT_MIX: Record<Categorie, number> = {
+  Snacking: 60,
+  Boutique: 30,
+  Traiteur: 10,
+};
+
 const PIE_COLORS = ["#f59e0b", "#fb923c", "#fbbf24"];
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function parseVenteDate(
   dateStr: string,
 ): { month: number; year: number } | null {
-  // Try YYYY-MM-DD
   const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso)
     return {
       year: Number.parseInt(iso[1], 10),
       month: Number.parseInt(iso[2], 10) - 1,
     };
-  // Try DD/MM/YYYY
   const fr = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (fr)
     return {
@@ -203,6 +212,136 @@ function SectionTitle({
 }) {
   return (
     <h2 className={`text-base font-semibold mb-3 ${colorClass}`}>{children}</h2>
+  );
+}
+
+// ── Mix Produit editable pie chart ─────────────────────────────────────────────
+
+function MixProduitCard() {
+  const { data: backendMix, isLoading: loadMix } = useMixProduitParCategorie();
+  const saveMix = useSaveMixProduitParCategorie();
+
+  const [values, setValues] = useState<Record<Categorie, number>>(DEFAULT_MIX);
+
+  // Initialise local state from backend once loaded
+  useEffect(() => {
+    if (!backendMix || backendMix.length === 0) return;
+    const next = { ...DEFAULT_MIX };
+    for (const [cat, val] of backendMix) {
+      if (cat === "Snacking" || cat === "Boutique" || cat === "Traiteur") {
+        next[cat] = val;
+      }
+    }
+    setValues(next);
+  }, [backendMix]);
+
+  const pieData = CATEGORIES.map((cat) => ({ name: cat, value: values[cat] }));
+
+  function handleChange(cat: Categorie, raw: string) {
+    const num = Number.parseFloat(raw);
+    setValues((prev) => ({
+      ...prev,
+      [cat]: Number.isNaN(num) ? 0 : Math.max(0, Math.min(100, num)),
+    }));
+  }
+
+  async function handleSave() {
+    const payload: [string, number][] = CATEGORIES.map((cat) => [
+      cat,
+      values[cat],
+    ]);
+    try {
+      await saveMix.mutateAsync(payload);
+      toast.success("Mix Produit sauvegardé avec succès");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Erreur lors de la sauvegarde : ${msg}`);
+    }
+  }
+
+  return (
+    <Card className="border-amber-200" data-ocid="dashboard.pie_chart">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold text-amber-700">
+          Répartition Mix Produit
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0 pb-4 space-y-4">
+        {loadMix ? (
+          <Skeleton className="h-[260px] rounded-lg" />
+        ) : (
+          <div className="flex justify-center">
+            <PieChart width={260} height={220}>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="45%"
+                outerRadius={80}
+                dataKey="value"
+                labelLine={false}
+              >
+                {pieData.map((entry, idx) => (
+                  <Cell
+                    key={`cell-${entry.name}`}
+                    fill={PIE_COLORS[idx % PIE_COLORS.length]}
+                  />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(value: number) => [`${value} %`, ""]}
+                contentStyle={{
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  border: "1px solid #fde68a",
+                }}
+              />
+              <Legend
+                iconType="circle"
+                iconSize={10}
+                wrapperStyle={{ fontSize: "12px" }}
+              />
+            </PieChart>
+          </div>
+        )}
+
+        {/* Editable inputs */}
+        <div className="space-y-2" data-ocid="dashboard.mix_inputs">
+          {CATEGORIES.map((cat) => (
+            <div key={cat} className="flex items-center gap-2">
+              <label
+                htmlFor={`mix-input-${cat}`}
+                className="w-20 text-xs font-medium text-amber-800 shrink-0"
+              >
+                {cat}
+              </label>
+              <input
+                id={`mix-input-${cat}`}
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={values[cat]}
+                onChange={(e) => handleChange(cat, e.target.value)}
+                className="w-20 rounded-md border border-amber-200 bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-400"
+                data-ocid={`dashboard.mix_input_${cat.toLowerCase()}`}
+              />
+              <span className="text-xs text-muted-foreground">%</span>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={saveMix.isPending}
+          className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+          data-ocid="dashboard.mix_save"
+        >
+          <Save className="h-4 w-4 mr-2" />
+          {saveMix.isPending ? "Sauvegarde…" : "Sauvegarder"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -403,49 +542,9 @@ export default function Dashboard() {
           </section>
         </div>
 
-        {/* Pie chart column */}
+        {/* Pie chart + info column */}
         <div className="space-y-5">
-          <Card className="border-amber-200" data-ocid="dashboard.pie_chart">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-amber-700">
-                Répartition Mix Produit
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex justify-center pt-0 pb-4">
-              <PieChart width={260} height={260}>
-                <Pie
-                  data={PIE_DATA}
-                  cx="50%"
-                  cy="45%"
-                  outerRadius={90}
-                  dataKey="value"
-                  labelLine={false}
-                >
-                  {PIE_DATA.map((entry) => (
-                    <Cell
-                      key={`cell-${entry.name}`}
-                      fill={
-                        PIE_COLORS[PIE_DATA.indexOf(entry) % PIE_COLORS.length]
-                      }
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: number) => [`${value} %`, ""]}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                    border: "1px solid #fde68a",
-                  }}
-                />
-                <Legend
-                  iconType="circle"
-                  iconSize={10}
-                  wrapperStyle={{ fontSize: "12px" }}
-                />
-              </PieChart>
-            </CardContent>
-          </Card>
+          <MixProduitCard />
 
           {/* Informational note */}
           <Card

@@ -111,17 +111,6 @@ function compoundGrowth(base: number, rate: number): number[] {
   ];
 }
 
-function calcMensualite(
-  montant: number,
-  tauxAnnuel: number,
-  dureeMois: number,
-): number {
-  if (dureeMois <= 0 || montant <= 0) return 0;
-  if (tauxAnnuel === 0) return montant / dureeMois;
-  const tm = tauxAnnuel / 100 / 12;
-  return (montant * tm) / (1 - (1 + tm) ** -dureeMois);
-}
-
 function findFraisAnnuel(
   fraisFixes: LigneFraisFixes[],
   keywords: string[],
@@ -136,6 +125,49 @@ function findFraisAnnuel(
     keywords.some((kw) => norm(l.nom).includes(norm(kw))),
   );
   return (line?.montantMensuelAvecRemu ?? 0) * 12;
+}
+
+// ── Amortization interest calculator ─────────────────────────────────────────
+function calculerInteretsSur5Ans(
+  emprunts: {
+    montant: number;
+    tauxAnnuel: number;
+    dureeMois: bigint | number;
+  }[],
+): number[] {
+  const totaux = [0, 0, 0, 0, 0];
+
+  for (const emprunt of emprunts) {
+    const montant = Number(emprunt.montant) || 0;
+    const tauxAnnuel = Number(emprunt.tauxAnnuel) || 0;
+    const dureeMois = Number(emprunt.dureeMois) || 0;
+
+    if (montant <= 0 || dureeMois <= 0) continue;
+
+    const tauxMensuel = tauxAnnuel / 12 / 100;
+    let mensualite: number;
+
+    if (tauxMensuel === 0) {
+      mensualite = montant / dureeMois;
+    } else {
+      mensualite =
+        (montant * tauxMensuel) / (1 - (1 + tauxMensuel) ** -dureeMois);
+    }
+
+    let capitalRestant = montant;
+
+    for (let mois = 1; mois <= 60; mois++) {
+      if (mois <= dureeMois && capitalRestant > 0) {
+        const interetDuMois = capitalRestant * tauxMensuel;
+        const anneeIndex = Math.floor((mois - 1) / 12);
+        totaux[anneeIndex] += interetDuMois;
+        capitalRestant -= mensualite - interetDuMois;
+        if (capitalRestant < 0) capitalRestant = 0;
+      }
+    }
+  }
+
+  return totaux;
 }
 
 function migrateCategories(saved: [string, number][]): [string, number][] {
@@ -309,10 +341,43 @@ export default function PilotageGlobal() {
   const saveJoursMut = useSaveJoursOuvertureParSemaine();
   const saveMixMut = useSaveMixProduitParCategorie();
 
+  // ── Hypothèses de Ventes — state synchronisé avec le backend ─────────────
+  const [nbClientsParSemaine, setNbClientsParSemaine] = useState(0);
+  const [nbSemainesSaisonHyp, setNbSemainesSaisonHyp] = useState(0);
+  const [hypothesesSaving, setHypothesesSaving] = useState(false);
+
+  // ── Tableau des hypothèses par catégorie (local state only) ──────────────
+  const DEFAULT_CATEGORIE_HYPOTHESES = [
+    {
+      nom: "Snacking",
+      mixProduit: 60,
+      ticketMoyenHT: 8,
+      tauxFoodCost: 30,
+      tauxTVA: 10,
+    },
+    {
+      nom: "Boutique",
+      mixProduit: 30,
+      ticketMoyenHT: 15,
+      tauxFoodCost: 25,
+      tauxTVA: 20,
+    },
+    {
+      nom: "Traiteur",
+      mixProduit: 10,
+      ticketMoyenHT: 25,
+      tauxFoodCost: 35,
+      tauxTVA: 10,
+    },
+  ];
+  const [categorieHypotheses, setCategorieHypotheses] = useState(
+    DEFAULT_CATEGORIE_HYPOTHESES,
+  );
+
   // ── Simulator state ───────────────────────────────────────────────────────
   const [params, setParams] = useState<ParametresRentabilite>(defaultParams());
-  const [ticketSlider, setTicketSlider] = useState(12);
-  const [clientsSlider, setClientsSlider] = useState(100);
+  const [clientsValue, setClientsValue] = useState(100);
+  const [ticketValue, setTicketValue] = useState(12);
   const [semainesStr, setSemainesStr] = useState("");
   const [joursStr, setJoursStr] = useState("6");
   const [foodCostStrs, setFoodCostStrs] = useState<Record<string, string>>(() =>
@@ -348,9 +413,16 @@ export default function PilotageGlobal() {
         tauxFoodCostParCategorie: migrated,
       };
       setParams(p);
-      if (saved.ticketMoyenHT > 0) setTicketSlider(saved.ticketMoyenHT);
-      if (saved.nbClientsParSemaine > 0)
-        setClientsSlider(saved.nbClientsParSemaine);
+      // Sync hypothèses de ventes
+      setNbClientsParSemaine(saved.nbClientsParSemaine ?? 0);
+      setNbSemainesSaisonHyp(saved.nbSemainesSaison ?? 0);
+      // Sync simulateur
+      if (saved.ticketMoyenHT > 0) {
+        setTicketValue(saved.ticketMoyenHT);
+      }
+      if (saved.nbClientsParSemaine > 0) {
+        setClientsValue(saved.nbClientsParSemaine);
+      }
       setSemainesStr(
         saved.nbSemainesSaison === 0 ? "" : String(saved.nbSemainesSaison),
       );
@@ -381,10 +453,9 @@ export default function PilotageGlobal() {
 
   // ── Computed values ───────────────────────────────────────────────────────
   const nbSemainesSaison = parseNumber(semainesStr);
-  const joursOuverture = parseNumber(joursStr);
 
   // CA annuel = clients/semaine × ticket HT × nb semaines × (1 + TVA 10%)
-  const caAnnuel = ticketSlider * clientsSlider * nbSemainesSaison * 1.1;
+  const caAnnuel = ticketValue * clientsValue * nbSemainesSaison * 1.1;
   const caMensuelMoyen = nbSemainesSaison > 0 ? caAnnuel / 12 : 0;
 
   const totalMensuelCharges = fraisFixesData.reduce(
@@ -437,13 +508,57 @@ export default function PilotageGlobal() {
   const evFrais = parseNumber(evFraisStr) / 100;
   const evSalaires = parseNumber(evSalairesStr) / 100;
 
-  const foodCostMapParams = useMemo(
-    () => new Map(params.tauxFoodCostParCategorie),
-    [params],
+  // ── Per-category CA & cost calculations from hypothèses table ────────────
+  const totalClientsAnnuels = nbClientsParSemaine * nbSemainesSaisonHyp;
+
+  const caParCategorie = useMemo(
+    () =>
+      categorieHypotheses.map((cat) => ({
+        nom: cat.nom,
+        caHT: totalClientsAnnuels * (cat.mixProduit / 100) * cat.ticketMoyenHT,
+        coutMatiere:
+          totalClientsAnnuels *
+          (cat.mixProduit / 100) *
+          cat.ticketMoyenHT *
+          (cat.tauxFoodCost / 100),
+      })),
+    [categorieHypotheses, totalClientsAnnuels],
   );
 
-  const totalCAYear1 =
-    ticketSlider * clientsSlider * joursOuverture * nbSemainesSaison;
+  const caHTGlobal = useMemo(
+    () => caParCategorie.reduce((s, c) => s + c.caHT, 0),
+    [caParCategorie],
+  );
+
+  const coutMatiereGlobal = useMemo(
+    () => caParCategorie.reduce((s, c) => s + c.coutMatiere, 0),
+    [caParCategorie],
+  );
+
+  // Weighted average ticket moyen (for simulator section & backward compat)
+  const ticketMoyenHTPondere =
+    totalClientsAnnuels > 0 ? caHTGlobal / totalClientsAnnuels : 0;
+
+  // Weighted average food cost (for backend save)
+  const tauxFoodCostPondere =
+    caHTGlobal > 0 ? (coutMatiereGlobal / caHTGlobal) * 100 : 0;
+
+  // Mix validation for the category table
+  const totalMixCategories = categorieHypotheses.reduce(
+    (s, c) => s + c.mixProduit,
+    0,
+  );
+  const mixOkCategories = Math.round(totalMixCategories) === 100;
+
+  // Handler for inline category table edits
+  function handleCategorieChange(index: number, field: string, value: number) {
+    setCategorieHypotheses((prev) =>
+      prev.map((cat, i) => (i === index ? { ...cat, [field]: value } : cat)),
+    );
+  }
+
+  // totalCAYear1 is caHTGlobal (per-category weighted sum)
+  const totalCAYear1 = caHTGlobal;
 
   const caYear1ByCategory = useMemo(() => {
     const map: Record<string, number> = {};
@@ -455,15 +570,7 @@ export default function PilotageGlobal() {
     return map;
   }, [totalCAYear1, foodCostMixMap, mixProduitStrs]);
 
-  const achatsMatieresYear1 = useMemo(
-    () =>
-      FOOD_COST_CATEGORIES.reduce((s, cat) => {
-        const fc =
-          foodCostMapParams.get(cat) ?? parseNumber(foodCostStrs[cat] || "0");
-        return s + (caYear1ByCategory[cat] ?? 0) * (fc / 100);
-      }, 0),
-    [caYear1ByCategory, foodCostMapParams, foodCostStrs],
-  );
+  const achatsMatieresYear1 = coutMatiereGlobal;
 
   const emballagesYear1 = parseNumber(emballagesStr);
 
@@ -496,28 +603,9 @@ export default function PilotageGlobal() {
     [amortissementsData],
   );
 
-  const interetsYear1 = useMemo(
-    () =>
-      empruntsData.reduce((s, e) => {
-        const duree = Number(e.dureeMois);
-        if (duree <= 0 || e.montant <= 0 || e.tauxAnnuel === 0) return s;
-        const tm = e.tauxAnnuel / 100 / 12;
-        let capital = e.montant;
-        let totalI = 0;
-        const mensualite = calcMensualite(e.montant, e.tauxAnnuel, duree);
-        for (let m = 0; m < Math.min(12, duree); m++) {
-          const interet = capital * tm;
-          totalI += interet;
-          capital -= mensualite - interet;
-        }
-        return s + totalI;
-      }, 0),
-    [empruntsData],
-  );
-
   const interetsYears = useMemo(
-    () => Array(5).fill(interetsYear1) as number[],
-    [interetsYear1],
+    () => calculerInteretsSur5Ans(empruntsData || []),
+    [empruntsData],
   );
 
   const caByYearAndCategory = useMemo(() => {
@@ -612,6 +700,34 @@ export default function PilotageGlobal() {
     Object.values(foodCostStrs).every((v) => validateNumber(v)) &&
     Object.values(mixProduitStrs).every((v) => validateNumber(v));
 
+  async function handleSaveHypotheses() {
+    setHypothesesSaving(true);
+    try {
+      const payload: ParametresRentabilite = {
+        ...params,
+        ticketMoyenHT: ticketMoyenHTPondere,
+        nbClientsParSemaine,
+        nbSemainesSaison: nbSemainesSaisonHyp,
+        tauxFoodCostParCategorie: params.tauxFoodCostParCategorie.map(
+          ([cat, _]) => [cat, tauxFoodCostPondere] as [string, number],
+        ),
+      };
+      await saveMut.mutateAsync(payload);
+      // Keep simulateur in sync
+      setTicketValue(ticketMoyenHTPondere);
+      setClientsValue(nbClientsParSemaine);
+      setSemainesStr(
+        nbSemainesSaisonHyp === 0 ? "" : String(nbSemainesSaisonHyp),
+      );
+      toast.success("Hypothèses de ventes enregistrées");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Erreur lors de la sauvegarde : ${msg}`);
+    } finally {
+      setHypothesesSaving(false);
+    }
+  }
+
   async function handleSave() {
     if (!allValid) {
       toast.error("Corrigez les champs invalides avant de sauvegarder.");
@@ -619,8 +735,8 @@ export default function PilotageGlobal() {
     }
     const payload: ParametresRentabilite = {
       ...params,
-      ticketMoyenHT: ticketSlider,
-      nbClientsParSemaine: clientsSlider,
+      ticketMoyenHT: ticketValue,
+      nbClientsParSemaine: clientsValue,
       nbSemainesSaison: parseNumber(semainesStr),
     };
     const joursVal = parseNumber(joursStr);
@@ -672,6 +788,266 @@ export default function PilotageGlobal() {
         </Button>
       </div>
 
+      {/* ── SECTION 0 : SIMULATEUR DE CHIFFRE D'AFFAIRES ── */}
+      <section>
+        <Card className="rounded-2xl shadow-lg border border-slate-200 bg-white overflow-hidden">
+          {/* Card top accent bar */}
+          <div className="h-1.5 w-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500" />
+          <CardHeader className="pb-4 pt-5">
+            <div className="flex items-start justify-between flex-wrap gap-3">
+              <div>
+                <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Calculator className="h-5 w-5 text-emerald-600" />
+                  Simulateur de Chiffre d&apos;Affaires
+                </CardTitle>
+                <p className="text-xs text-slate-500 mt-1">
+                  Paramètres globaux et hypothèses par catégorie — pilotent
+                  directement la ligne CA du tableau prévisionnel 5 ans
+                </p>
+              </div>
+              <Button
+                onClick={handleSaveHypotheses}
+                disabled={
+                  hypothesesSaving || saveMut.isPending || !mixOkCategories
+                }
+                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50"
+                data-ocid="pilotage.hypotheses_save_button"
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {hypothesesSaving ? "Enregistrement..." : "Sauvegarder"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pb-6">
+            {loadingParams ? (
+              <div className="flex gap-4">
+                <Skeleton className="h-20 flex-1 rounded-xl" />
+                <Skeleton className="h-20 flex-1 rounded-xl" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Clients par semaine */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2 hover:border-emerald-300 transition-colors">
+                  <Label
+                    htmlFor="sim-clients"
+                    className="text-xs font-semibold text-slate-500 uppercase tracking-wide"
+                  >
+                    Clients par semaine
+                  </Label>
+                  <input
+                    id="sim-clients"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={nbClientsParSemaine === 0 ? "" : nbClientsParSemaine}
+                    onChange={(e) =>
+                      setNbClientsParSemaine(
+                        Math.max(0, Number(e.target.value) || 0),
+                      )
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 placeholder:text-slate-300"
+                    placeholder="100"
+                    data-ocid="pilotage.hyp_clients_input"
+                  />
+                  <p className="text-xs text-slate-400">
+                    Nb moyen de couverts / semaine
+                  </p>
+                </div>
+
+                {/* Semaines d'ouverture */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2 hover:border-emerald-300 transition-colors">
+                  <Label
+                    htmlFor="sim-semaines"
+                    className="text-xs font-semibold text-slate-500 uppercase tracking-wide"
+                  >
+                    Semaines d&apos;ouverture par an
+                  </Label>
+                  <input
+                    id="sim-semaines"
+                    type="number"
+                    min={0}
+                    max={52}
+                    step={1}
+                    value={nbSemainesSaisonHyp === 0 ? "" : nbSemainesSaisonHyp}
+                    onChange={(e) =>
+                      setNbSemainesSaisonHyp(
+                        Math.min(52, Math.max(0, Number(e.target.value) || 0)),
+                      )
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 placeholder:text-slate-300"
+                    placeholder="48"
+                    data-ocid="pilotage.hyp_semaines_input"
+                  />
+                  <p className="text-xs text-slate-400">
+                    Semaines effectives d&apos;exploitation
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Tableau Hypothèses par Catégorie ── */}
+            <div className="mt-5 rounded-xl border border-amber-200 bg-white overflow-hidden">
+              <div className="bg-amber-50 px-4 py-3 border-b border-amber-200">
+                <p className="text-sm font-bold text-amber-800">
+                  Hypothèses par Catégorie
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Définissez le mix, le ticket moyen et les taux pour chaque
+                  catégorie
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-amber-100 text-amber-900 text-xs font-semibold uppercase tracking-wide">
+                      <th className="px-4 py-2.5 text-left">Catégorie</th>
+                      <th className="px-3 py-2.5 text-center">
+                        Mix Produit (%)
+                      </th>
+                      <th className="px-3 py-2.5 text-center">
+                        Ticket Moyen HT (€)
+                      </th>
+                      <th className="px-3 py-2.5 text-center">Food Cost (%)</th>
+                      <th className="px-3 py-2.5 text-center">TVA (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categorieHypotheses.map((cat, idx) => (
+                      <tr
+                        key={cat.nom}
+                        className={
+                          idx % 2 === 0 ? "bg-white" : "bg-amber-50/40"
+                        }
+                      >
+                        <td className="px-4 py-2.5 font-semibold text-slate-700">
+                          {cat.nom}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={cat.mixProduit}
+                            onChange={(e) =>
+                              handleCategorieChange(
+                                idx,
+                                "mixProduit",
+                                Math.max(
+                                  0,
+                                  Math.min(100, Number(e.target.value) || 0),
+                                ),
+                              )
+                            }
+                            className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-center text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            data-ocid={`pilotage.cat_mix_${idx}`}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={cat.ticketMoyenHT}
+                            onChange={(e) =>
+                              handleCategorieChange(
+                                idx,
+                                "ticketMoyenHT",
+                                Math.max(0, Number(e.target.value) || 0),
+                              )
+                            }
+                            className="w-24 rounded border border-slate-300 bg-white px-2 py-1 text-center text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            data-ocid={`pilotage.cat_ticket_${idx}`}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.1}
+                            value={cat.tauxFoodCost}
+                            onChange={(e) =>
+                              handleCategorieChange(
+                                idx,
+                                "tauxFoodCost",
+                                Math.max(
+                                  0,
+                                  Math.min(100, Number(e.target.value) || 0),
+                                ),
+                              )
+                            }
+                            className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-center text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            data-ocid={`pilotage.cat_fc_${idx}`}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.1}
+                            value={cat.tauxTVA}
+                            onChange={(e) =>
+                              handleCategorieChange(
+                                idx,
+                                "tauxTVA",
+                                Math.max(
+                                  0,
+                                  Math.min(100, Number(e.target.value) || 0),
+                                ),
+                              )
+                            }
+                            className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-center text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            data-ocid={`pilotage.cat_tva_${idx}`}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Mix validation */}
+              <div className="px-4 py-3 border-t border-amber-100 bg-slate-50 text-sm">
+                {mixOkCategories ? (
+                  <span className="text-green-600 font-semibold">
+                    Total : 100 %
+                  </span>
+                ) : (
+                  <span className="text-red-500 font-semibold">
+                    Total : {totalMixCategories} % — Attention, le total doit
+                    être exactement de 100 %
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* CA Année 1 result banner */}
+            <div className="mt-5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-4 flex items-center justify-between flex-wrap gap-3 shadow-sm">
+              <div>
+                <p className="text-xs font-semibold text-emerald-100 uppercase tracking-widest mb-0.5">
+                  CA HT Année 1 estimé
+                </p>
+                <p className="text-3xl font-black text-white tabular-nums">
+                  {fmt(caHTGlobal)}
+                </p>
+              </div>
+              <div className="text-right space-y-1">
+                {caParCategorie.map((c) => (
+                  <p key={c.nom} className="text-xs text-emerald-100">
+                    {c.nom} :{" "}
+                    <span className="font-semibold">{fmt(c.caHT)}</span>
+                  </p>
+                ))}
+                <p className="text-xs text-emerald-200 mt-1">
+                  Pilote directement le tableau 5 ans ↓
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
       {/* ── SECTION A : SIMULATEUR ── */}
       <section className="space-y-4">
         <h3 className="text-base font-semibold flex items-center gap-2 text-amber-700">
@@ -693,55 +1069,51 @@ export default function PilotageGlobal() {
                 </div>
               ) : (
                 <>
-                  {/* Clients/semaine */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm">
-                        Nombre de clients / semaine
-                      </Label>
-                      <span className="text-lg font-bold text-amber-700">
-                        {clientsSlider}
+                  {/* Clients/semaine — champ numérique libre */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">
+                      Nombre de clients / semaine
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={clientsValue}
+                        onChange={(e) => {
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          setClientsValue(v);
+                        }}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        placeholder="ex : 100"
+                        data-ocid="pilotage.clients_input"
+                      />
+                      <span className="text-sm text-muted-foreground shrink-0">
+                        clients
                       </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={500}
-                      step={1}
-                      value={clientsSlider}
-                      onChange={(e) => setClientsSlider(Number(e.target.value))}
-                      className="w-full accent-amber-500"
-                      data-ocid="pilotage.clients_slider"
-                    />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>0</span>
-                      <span>250</span>
-                      <span>500</span>
                     </div>
                   </div>
 
-                  {/* Ticket moyen HT */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm">Ticket moyen HT (€)</Label>
-                      <span className="text-lg font-bold text-amber-700">
-                        {ticketSlider.toFixed(1)} €
+                  {/* Ticket moyen HT — champ numérique libre */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Ticket moyen HT (€)</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={ticketValue}
+                        onChange={(e) => {
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          setTicketValue(v);
+                        }}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        placeholder="ex : 12"
+                        data-ocid="pilotage.ticket_input"
+                      />
+                      <span className="text-sm text-muted-foreground shrink-0">
+                        €
                       </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={200}
-                      step={0.5}
-                      value={ticketSlider}
-                      onChange={(e) => setTicketSlider(Number(e.target.value))}
-                      className="w-full accent-amber-500"
-                      data-ocid="pilotage.ticket_slider"
-                    />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>0 €</span>
-                      <span>100 €</span>
-                      <span>200 €</span>
                     </div>
                   </div>
 
@@ -784,7 +1156,7 @@ export default function PilotageGlobal() {
                   {fmt(caAnnuel)}
                 </p>
                 <p className="text-xs text-amber-600 mt-1">
-                  {clientsSlider} clients/sem × {ticketSlider.toFixed(1)} € HT ×{" "}
+                  {clientsValue} clients/sem × {ticketValue.toFixed(2)} € HT ×{" "}
                   {nbSemainesSaison} sem × 1,1 TVA
                 </p>
               </CardContent>
@@ -1237,6 +1609,11 @@ export default function PilotageGlobal() {
                   label="Intérêts d'emprunts"
                   values={interetsYears}
                   indent
+                  badge={
+                    <span className="ml-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-0.5">
+                      Calcul exact
+                    </span>
+                  }
                 />
                 <SpacerRow />
 
@@ -1304,8 +1681,10 @@ export default function PilotageGlobal() {
           </p>
           <p>
             <span className="text-emerald-600 font-bold">✓</span> Intérêts :
-            Calcul exact des 12 premiers mois (onglet Investissements &amp;
-            Emprunts)
+            Tableau d&apos;amortissement financier (mensualités constantes) —
+            calcul exact année par année (Années 1-5) basé sur le capital
+            restant dû. 0 € une fois l&apos;emprunt soldé (onglet
+            Investissements &amp; Emprunts)
           </p>
           <p>
             <span className="text-amber-600 font-bold">★</span> Saisonnalité :
